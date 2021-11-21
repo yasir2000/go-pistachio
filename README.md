@@ -90,10 +90,6 @@ Problems:
 ![](https://i.imgur.com/QnEYGkv.png =512x300)
 		
 ## Idiomatic Go Tricks
-> Mat Ryer - http://matryer.com
-
-:four: :star: :star: :star: :star:
-
 - Idiomatic:
   - adjective: using, containing, denoting expressions.
   - talk natural go language
@@ -159,7 +155,7 @@ How to become a native speaker:
 	  - no blue green deployments.
 - monitoring
     - they use graphite + prometheus + grafana (he encourage the use of this last one)
-    	- because prometheus is pull-oriented they don't crash a push system like they did with http://opentsdb.net/
+    - because prometheus is pull-oriented they don't crash a push system like they did with http://opentsdb.net/
 - structured logging
     - ![](http://i.imgur.com/Y8B9Ksw.jpg =512x)
     - breaking logs down into something readable. JSON formatted log as example.
@@ -260,3 +256,471 @@ How to become a native speaker:
  - tracing: 
    - client: go-kit's opentracing, x/net/trace
    - server: https://github.com/tracer/tracer
+
+## Design patterns in Microservices architectures and Gilmour
+- services vs servers
+  - services solve a software problem and a management problem
+- communication design patterns
+  - Request/Response
+   - example with a topic layer to identify endpoints
+   - confirmed delivery: response or error
+   - HTTP friendly
+   - sender handles errors
+  - async: signals and slots
+   - events -> queue sys -> event processors
+    - you can scale the processors horizontally
+    - e.g: Kafka, RabbitMQ...
+    - patterns: fan-out, broadcast, filtering (wildcards)...
+- discovery and load balancing
+  - replicated load balancer + health checking
+  - Gilmour does Pub/Sub, there is no discovery
+- error
+  - detection
+   - timeout: server or client side
+  - handling
+   - ignore, publish...
+- composition: request piping
+
+## static deadlock detection
+- concurrency
+  - > don't communicate by sharing memory, share memory by communication
+  - channels message passing
+  - is complicated, bugs hard to find
+- deadlocks
+  - `all goroutines are asleep - deadlock`
+  - what causes a deadlock in go?
+      1. sender sends message, Receiver not ready
+      2. sender blocks goroutine and wait until Receiver ready
+      3. blocked goroutine goes to sleep
+  - avoiding deadlocks
+    - make sure sender/receiver are matching and compatible
+    - then why are hard to avoid in practice?
+  - go detects deadlocks at execution time and panics
+  - "local deadlock" -> not all program is stuck
+  - how to detect a deadlock without running the program?
+- static deadlock detector: github.com/nickng/dingo-hunter
+    - models the program gorutines as FSMs
+    - builds a graph
+    - checks for deadlocks in the graph
+- modelling concurrency
+  - learn from the masters: Hoare, Milner
+  - *Session types* on pi-calculus
+
+## Advanced Patterns with io.ReadWriter
+- What can you find in `io`, `bufio`, `ioutil`:
+  - `Reader`
+  - `Writer`
+  - `Copy`
+  - `LimitReader`
+  - `TeeReader`
+  - etc
+- composition is so easy
+- a stream in go is a buffer that you use to read or write in chunks
+
+### examples
+- HTTP chunking. Transparently proxy a chunked HTTP in a stream.
+  - `httputil.ChunkedReader`
+    - problems: 
+      - strips out the chunking data
+      - can't validate MD5
+  - `httputil.ChunkedReader` + `TeeReader`
+- prefixing, split into sections
+  - `os.Stdout` is a `Writer`
+  - `bufio.NewScanner(input)`, `scanner.SplitFunc`, loop over `scanner.Scan`, use `scanner.Bytes`
+  - input is a `Reader`
+  - `io.Pipe` syncs a `Reader` and a `Writer`, if one does not "work" then it will **block** (which is handy)
+
+## What every developer should know about logging
+### logging 101
+  - two levels
+    - debug: lot information
+    - info: understand application flow, what happens in application
+  - logging infrastructure is complex
+
+### why do we write logs
+  - we want to know what our application is doing
+  - good logging is the key to solve bugs
+  - replace lot of third party monitoring services
+
+### logging infrastructure
+  - is not an easy task
+  - workflow
+    - application is logging to stdout
+    - stdout is redirected to file
+    - log forwarders are moving logs to centralized log server
+    - log server allows to browse and analyze application bahaviours
+    - its unix style, one simple step at the time
+  - applications
+    - logstash
+    - kibana
+    - summologic
+    - splunk
+
+### how to structure logs in microservices
+  - ```[timestamp][RID(request id)=foobar][RD(request delta)=0.003][LD(local delta)=0.001][service=API][search][results=432]```
+  - we should adapt log message structure to our application needs
+
+### golang log libraries
+  - package log
+  - glog - logging library from google, allows more control on log levels
+
+### tips and tricks
+  - profile your logging system
+  - log sampling: when your systems are produciong too many logs, collect only every Xth message, statiscally you will get enough logs to understand your app behaviour
+  - security: never log user passwords, keys, name (does anyone do it?)
+  - dapper: tracing system from google
+http://research.google.com/pubs/pub36356.html
+
+## Implementing software machines in Go & C
+### virtual machines
+
+* many types of virtual machines: system virtualization, hardware emulation
+* focus: abstract virtual machines
+* inspired by hardware: discrete componentes, processors, storage, communications
+* software machines:
+	* stateful: state matters. With no state they don't have identity
+	* timely: 
+	* scriptable: you need to add complex behaviour, if not, it makes no sense to have a machine in the first place
+* abstract virtual machine components:
+	* stacks, CPU (registers), CPU cache, Heap, Buffers, Network and persistent store
+	* timings in different components: depending on heap, buffer, network, etc. different magnitudes
+
+### Memory
+
+* store data and instructions
+	* memory model:
+		* Von Neumann
+		* Harvard
+		* Forth (split model)
+		* Hybrid
+* other parts (not covered)
+	* addressing
+	* protection
+* creating a heap in Go
+	* creating sliceHeaders using slice manipulations
+	* public interface: 
+		* `Bytes()`
+		* `Serialise()`
+		* `Overwrite()`
+	* usage of unsafe: to manipulate bytes is actually legitimate
+* array stack:
+	* it's a functional data structure which is actually used
+
+### CPU
+
+* dispatch loops: 
+	* reading opcodes from mememory
+	* change state machine internal state 
+	* switch interpreter
+		* tokens are often single bytes
+* we need stack in order to implement the CPU
+* opcodes have mnemonics
+* opcodes are stored in a stack to be execute in the dispatch loop
+* direct call threading
+	* each instruction is represented by a pointer to a function
+	* instruction require a machine word
+* indirect threading
+	* used to represent local jumps in the program
+	* https://en.wikipedia.org/wiki/Threaded_code#Indirect_threading
+* timings:
+	* clock pulse
+	* synchronization: provides it across the processor
+
+### Transport triggering
+
+* https://en.wikipedia.org/wiki/Transport_triggered_architecture	
+* register machine architecture
+* exposes internal buses as components
+* operations are side-effects of internal writes
+
+### Random thoughts
+
+* C VM: primitive!
+* distances in physical: they matter in computing, analogies with physicist
+* it's bad to have things not initialized by default (Rust structs must be initialized all fields by default, Golang not! You want nil pointers? Use Option)
+* usefulness of functional data structures
+* cactus stack: https://en.wikipedia.org/wiki/Parent_pointer_tree
+
+## Grand Treatise of Modern Instrumentation and Orchestration
+See https://prometheus.io
+
+- inspired by Google's monitoring strategy: alert for high-level stuff and allow inspecting low level.
+- USE method: **U**tilization, **S**aturation and **E**rror rates. Also, latency.
+- RED method: **R**equest count (rate) **E**rror count (rate) and **D**uration
+- Prometheus :moneybag: :bike: 
+  - expvar-like API and other types
+  - you have a server and query prometheus endpoints in services
+  - it gives you the typical go VM stats: goroutine number, memmory, GC etc
+  - it has a query lang called PromQL
+  - it gives you percentiles etc
+  - counters, gauges... Counters always go up, Gauges can go down (e.g 1,2,3,4,3,4,2,1)
+  - there are exporter tools around (e.g Apache)
+
+## GoBridge and the Go Community: Initiatives and Opportunities
+- http://bridgefoundry.org/
+- https://golangbridge.org/
+- must listen https://changelog.com/gotime-6/
+- they need people, you can help!
+  - code combat https://codecombat.com/about to help people learn Go. If interested talk with William Kennedy (@goinggodotnet)
+
+## Managing and scaling Real-time Data Pipelines using Go
+- works at Riot Games, better known for develop the League Of Legends (LOL) videogame.
+- high success: from 7 year old startup to XXX workers and millions of players
+- reliability -> monitoring at scale
+  - you have to trust your monitoring systems, false alarms do the contrary
+- 15+ datacenters, 20K servers, 160k services, 6.5M metrics, 100K values/second, 1TB daily volume
+- microservices for the win
+  - Diverse tech choices
+  - Containers and metal
+  - Linux, Mac and Windows
+  - In house or as a service
+- 2 agents by host.
+  - Discovery agent
+  - Metrics agent
+- Endpoints by host providing data and stats in Json format.
+
+#### The pipeline
+
+![](https://i.imgur.com/cWwb99a.jpg)
+
+#### design goals
+
+  - decouple
+    - pure interface abstraction. 
+    - no datastore details.
+    - in order to make changes easily
+  - resilient
+    - batching
+    - draining
+    - stateless
+    - they receive attacks
+    - what if Kafka goes down?
+  - HTTP native
+    - HTTP + JSON everywhere
+  - instrumented
+    - Metrics are key. 
+  - fast
+    - 75K+ values/sec on a laptop
+
+#### go
+- channels
+  - they put them everywhere
+  - visualizing them is hard
+  - event collector pipeline: generate events, transform them, send to Kafka
+- design patterns
+  - rate limiting
+    - buffered channel
+  - caching to avoid backpressure when readers block you
+  - tickers with `time.After()`
+  - pipelining 
+    - they use an empty struct channel (but should have used `context.Done()`)
+    - `sync.WaitGroup` with `Add(1)` in every step of the pipeline and `Wait()` at the end
+  - batching
+    - good for client APIs
+    - take advantage of buffers
+      - bottleneck if ticking is very low
+      - know your data: for metrics, client draining: if server fails, discard old items
+
+## Building Cloud Native applications with Go
+- cloud native evolution
+  - build software in virtualized envs
+  - https://cncf.io
+- arch: 
+  - abstractions: containers, clusters, microservices
+  - container managers: docker, rkt
+- Kubernetes: 
+  - http://kubernetes.io/docs/whatisk8s
+  - container manager + microservices
+  - Manage applications, not machines
+
+#### The flow of Deployment
+![](http://i.imgur.com/vOaB1wH.jpg =600x)
+
+#### Kubernetes features
+
+- immutability
+  - means robustness
+  - containers are **immutable**
+  - various immutable server images (deployed using Spinnaker) - http://www.spinnaker.io
+  - from [build -> package -> deploy] to [build -> package -> **construct** -> deploy]
+    - construct the immutable graph that will be deployed
+    - k8s is a declarative way of configuring the construct step
+- config
+  - in deploy time
+    - credentials: pod structure
+    - env-based: k/v store
+    - no flags or env vars to avoid restarting the app
+- deploy
+  - with config / secrets
+- provides a general resource type system
+  - DSL, config based on YAML
+  - describes: load balancers, autoscaling, networking, clustering, zones, vm stuff, disk stuff...
+    - looks like AWS API without the As a Service part
+- nested deployments: example with an app with a backend and a frontend sub-deployments
+- packages: based on https://github.com/kubernetes/helm
+  - > Helm is a tool for managing Kubernetes charts. Charts are packages of pre-configured Kubernetes resources
+  - CHART files (config files) <- Helm <- Repository (S3 as example)
+- it uses 
+  - etcd for storing and distribute cluster stats and configurations
+    - distributed K/V, Raft-based
+  - prometheus for monitoring which is integrated with the k8s API 
+
+#### Why golang
+- designed for large, distributed, collaborative software projects
+- static compilation
+- strong alternative to C/C++ for cross platform simple and really functional CLI tools
+- low level primitives
+  - networking
+  - process managing
+  - syscalls
+- critical mass
+  - hipster
+  - cool
+  - trendy
+
+## Building Mobile SDKs with GoMobile
+#### Creating a client SDK in Go
+- the horrors of generating cross platform code
+  - c/c++: "god please no"
+  - xamarin: better but tooling is a pain
+  - javascript: uggh
+  - go moblie: rather nice
+    - go can interact with c
+    - compile native binaries
+- why do we not write dry code?
+  - we do it because dont have the time
+- how would we test our client?
+  - no sandbox
+  - binary protocol
+  - tcp sockets
+
+#### Generationg native frameworks with Go Mobile
+- protobuf (rpc)
+- use ```protoc``` to generate the go code
+- create a simple rpc server
+- GoMobile could generate a callback to call a native client function
+- every in go can run native
+
+#### Integration the generated SDK into an Android app
+- live coding
+- http://github.com/gokitter <-- source code
+
+## Seven ways to profile Go applications
+1. **time**
+ - GNU's (`/usr/bin/time` not `time`) `/usr/bin/time -v`
+2. **go build** -x + toolexec (the latter prepends the command with the tool specified)
+  - `go build -toolexec="/usr/bin/time" cmd/compile/internal/gc`
+3. **GODEBUG** env variable
+  - stats provided by Go
+  - `env GODEBUG=gctrace=1` 
+4. **Profiling**
+  - tips
+    - machine must be idle
+    - watch out for power saving and thermal scaling
+    - avoid virtual machines. too much noise.
+    - don't use OSX < El Capitan
+    - try to use dedicated performance test hardware
+    - run multiple times (OS has several layers of cache and needs warmup etc)
+    
+4.1. **pprof**
+  - descends from Google Performance Tools suite 
+  - CPU profiling
+  - memory profiling
+    - heap allocations (in contrast to stack allocations which are "free", heap ones are costly)
+    - Bill tip: don't use htop & friends
+  - block profiling
+    - aka backpressure measurement?
+    - similar to CPU profile but records the amount of time a goroutine spent waiting shared resources.
+  - do not mix profiling types! 
+  - microbenchmarks
+    - `go test -run=XXX -bench=IndexByte -cpuprofile=/tmp/c.p bytes`
+      - XXX trick does the test just to run the benchmarks and not the tests
+    - https://github.com/pkg/profile
+      - good for profiling whole programs from start to end, you put the code in your program
+  - reports can be exported to visual graphs
+    - in the example, SVG version, the biggest box was a syscall for reading from the network. He said you can avoid to with buffering. 
+5. **perf**
+  - linux tool, integrate with toolexec
+    - what we use on osx? Maybe [this apple tool](https://developer.apple.com/library/tvos/documentation/DeveloperTools/Conceptual/InstrumentsUserGuide) can help.
+  - looks awesome
+  - percent on the left is how expensive the op was
+  - framepointers, Go >=1.7 at least. otherwise doesn't look very good.
+6. **flame graph** from netflix
+  - func calls are just displayed once and grouped by size
+7. **Go tool trace**
+  - goroutines
+    -  creation/start/end
+    -  blocking/unblocking
+  -  network
+  -  system calls
+
+## Building your own log-based message queue in Go
+> Victor Ruiz- http://golanguk.com/speakers/#víctor-ruiz
+> https://texlution.com/
+
+:eight: :star: :star: :star: :star: :star: :star: :star: :star:
+
+Good read https://engineering.linkedin.com/distributed-systems/log-what-every-software-engineer-should-know-about-real-time-datas-unifying
+
+- logs 
+  - > append only, totally-ordered sequence of records ordered by time --LinkedIn eng blog
+  - very simple but also very fast to read and write in disk
+  - strong ordering: not all message queues assure it but logs do
+  - DDBBs usually write to logs first before writing to the final data structure they use
+- Kafka
+  - super performant, battle tested, LinkedIn
+  - O(1) reads and writes
+    - see https://kafka.apache.org/08/design.html, "Constant Time Suffices"
+  - distributed, HA, uses ZooKeeper
+  - sometimes is too much for some cases -> **lets build one in Go**
+- building blocks 
+  - indexes
+  - readers
+    - file readers on demand implementing `io.Reader`
+  - watcher: subscribers with channel
+  - scanner: map in a buffered way to iterate over the log records
+  - streamer: if you need higher throughput than the scanner
+- result: BigLog https://github.com/ninibe/netlog/tree/master/biglog  
+- demo
+  - API
+  - simple demo with curl client against the HTTP API
+  - pub/sub example
+
+## Real-Time Go
+- GC-based langs don't have good reputation in RT systems
+- talk is about building a RT bidding system with Go
+- RT definition
+  - something executed very fast? nop
+  - > system... finite and specified period
+  - aka **deadline**
+- types
+  - hard: e.g patience analysis in medic systems
+    - if deadline is missed => :bomb:
+  - form: occasional deadline misses are tolerable although the result is not useful
+  - soft: usefulness degrades with bigger deadline misses
+    - e.g 3D FPS game lag (PWNT :-)
+    - cam control systems in rooms
+- RT bidding
+  - automated 2nd price auctions
+  - 100-120ms
+  - Nash equilibrium, game theory algos
+- Travel Audience (Amadeus company)
+  - itermediary between publishers and users
+  - they do RT bidding
+  - segment users based on travel destinations
+- "The Problem"
+  - intersect user interest and available offers 
+- iterations
+  - C lang, 2K QPS + memcached
+    - never worked really well
+  - go version
+    - some deadlines missed
+    - solution: set an internal deadline of 75ms
+    - use `time.After`, also `context.CancelFunc`
+  - storage:
+    - first memcached
+    - then MongoDB
+      - https://aphyr.com/posts/322-jepsen-mongodb-stale-reads
+      - external DDBB adds net latency
+    - then Redis
+
