@@ -1,5 +1,5 @@
 # go-pistachio
-Stakes for better Golang development 
+Stakes for better idiomatic Golang development 
 
 ### The **SOLID** principles
 Objective: design good programs.
