@@ -655,10 +655,6 @@ See https://prometheus.io
   -  system calls
 
 ## Building your own log-based message queue in Go
-> Victor Ruiz- http://golanguk.com/speakers/#víctor-ruiz
-> https://texlution.com/
-
-:eight: :star: :star: :star: :star: :star: :star: :star: :star:
 
 Good read https://engineering.linkedin.com/distributed-systems/log-what-every-software-engineer-should-know-about-real-time-datas-unifying
 
